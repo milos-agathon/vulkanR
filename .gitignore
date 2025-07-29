@@ -1,0 +1,14 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+src/rust/target/
+src/rust/Cargo.lock
+*.dll
+*.so
+*.dylib
+*.png
+!tests/testthat/ref_*.png
+src/rust/vendor
+src/Makevars
+src/Makevars.win

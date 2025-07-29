@@ -1,0 +1,11 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.git$
+^\.github$
+^README\.Rmd$
+^src/rust/target$
+^src/rust/Cargo\.lock$
+^src/\.cargo$
+^src/rust/vendor$
+^src/Makevars$
+^src/Makevars\.win$

@@ -1,0 +1,235 @@
+Stream A — Interactive device & event loop
+M2‑A1 — Headless surface (CI default)
+
+Goal: Create an offscreen rendering path using the platform loader; prefer a headless surface extension or surfaceless framebuffer if supported; fall back to swapchain‑less render to image.
+
+Files:
+
+src/rust/device.rs (instance/surface/queue setup)
+
+src/rust/render_target.rs (offscreen image, layout transitions, readback)
+
+R/api-render.R (add device = "headless" path)
+
+Steps:
+
+Add device/instance creation with validation in Debug.
+
+Create offscreen color image, allocate with allocator (VMA or native), and transition to transfer‑src.
+
+Implement readback to host memory; encode PNG in R (or native stub returns raw bytes).
+
+DoD: vk_render(scene, 64, 36) returns non‑empty raw and a PNG can be written in R; runs on CI without X/Wayland/WindowServer.
+
+M2‑A2 — Windowing backend (feature‑gated)
+
+Goal: Add an optional on‑screen window path with input callbacks (orbit/pan/zoom).
+
+Files:
+
+src/rust/window.rs (window creation + event loop)
+
+src/rust/input.rs (camera controller)
+
+R/api-render.R (vk_view() dispatch)
+
+configure/Cargo.toml/src/Makevars{,.win} (feature toggle)
+
+Steps:
+
+Choose backend (TBD: Rust windowing or system GLFW).
+
+Create window + surface, swapchain, present loop; map mouse/keys to camera state.
+
+Add vk_view(scene, title); no file I/O; returns invisible(TRUE).
+
+DoD: Local run opens a window; orbit/pan/zoom work; disabled by default for CI/CRAN (feature flag).
+
+M2‑A3 — Camera & transforms
+
+Goal: Camera type with view/projection; update from input.
+
+Files: src/rust/camera.rs, R/api-scene.R (camera params)
+
+Steps:
+
+Implement look‑at camera; perspective + orthographic.
+
+Provide R setters (scene_set_camera(scene, list(...))) or pass via vk_view()/vk_render().
+
+DoD: Changing camera params in R changes the rendered view; unit test asserts matrix contents.
+
+Stream B — Geometry ingestion & preparation
+M2‑B1 — Mesh schema & buffers
+
+Goal: Define canonical mesh buffers (positions, indices, normals, uvs).
+
+Files: src/rust/mesh/mod.rs, R/classes-mesh.R
+
+Steps:
+
+Decide FP precision (f32/f64) and index type (u32).
+
+Define CPU‑side mesh struct; validate sizes and winding.
+
+DoD: vk_mesh constructor validates shapes; unit tests pass for trivial triangle.
+
+M2‑B2 — Extruded polygons
+
+Goal: Convert 2D polygon(s) + height/extrusion to watertight indexed mesh.
+
+Files: src/rust/mesh/extrude.rs, R/ingest-sf.R (vk_mesh_from_sf())
+
+Steps:
+
+TBD triangulation (earcut‑style) to tesselate top/bottom.
+
+Build side walls; compute normals (face or averaged per‑vertex).
+
+DoD: vk_mesh_from_sf(polys) returns closed mesh; normals unit length; no self‑intersections on simple cases.
+
+M2‑B3 — Heightmaps (raster → grid mesh)
+
+Goal: Turn raster/elevation into a grid mesh with scaling.
+
+Files: src/rust/mesh/heightmap.rs, R/ingest-terra.R (vk_mesh_from_terra())
+
+Steps:
+
+Build grid vertices; scale Z by z_scale.
+
+Create indices for two‑triangles per quad; compute normals from central differences.
+
+DoD: Small digital elevation sample produces consistent vertex/normal counts; golden‑image render exists for headless path.
+
+M2‑B4 — Point clouds (minimal path)
+
+Goal: Upload XYZ(+RGB) as point primitives; simple size/attenuation control.
+
+Files: src/rust/mesh/points.rs, R/ingest-data.R
+
+Steps:
+
+Pack positions/colors into SSBO/VBO; simple pipeline state for points.
+
+DoD: Tiny synthetic point set renders in headless path; counts validated.
+
+Stream C — Lighting & materials (raster pipeline for now)
+M2‑C1 — Shading model (Lambert/Phong)
+
+Goal: GPU pipeline with vertex + fragment shaders implementing Lambert or Phong.
+
+Files:
+
+inst/shaders/raster.vert, inst/shaders/raster.frag
+
+tools/compile_shaders.{sh,ps1} (compile to SPIR‑V)
+
+src/rust/pipeline.rs (graphics pipeline)
+
+Steps:
+
+Author minimal shaders (MVP, normal transform, light loop).
+
+Build pipeline layout with descriptor sets for camera, lights, materials.
+
+Wire shader compilation into build (validate SPIR‑V in CI).
+
+DoD: Headless render shows shaded geometry; validation layer clean.
+
+M2‑C2 — Materials & lights in scene
+
+Goal: Represent materials (albedo/roughness/metallic) and light types.
+
+Files: src/rust/material.rs, src/rust/light.rs, R/api-scene.R (constructors/setters)
+
+Steps:
+
+Define material struct + defaults.
+
+Define directional and point light structs; allow multiple.
+
+Push to GPU via uniform/SSBO; keep within uniform limits.
+
+DoD: R can add materials/lights; shaders consume them; renders differ when parameters change.
+
+Stream D — macOS (MoltenVK) capability flags
+M2‑D1 — Capability probe & report
+
+Goal: Query device features/extensions; record portability status.
+
+Files: src/rust/caps.rs, R/diagnostics.R (extend vk_is_available())
+
+Steps:
+
+At device creation, record enabled extensions/features.
+
+Expose to R as a list; include portability enumeration flags.
+
+DoD: vk_is_available() shows loader/device + list of instance/device extensions; on macOS, portability flags reflected.
+
+M2‑D2 — Feature‑gating & fallbacks
+
+Goal: If a given extension/feature is missing under MoltenVK (e.g., draw‑indirect variants), disable or replace with a safe path.
+
+Files: src/rust/feature_flags.rs, build scripts
+
+Steps:
+
+Centralize feature flags (boolean struct) after probe.
+
+Branch in pipeline setup and draw path to supported alternatives.
+
+DoD: Same scene renders on macOS with no validation errors; a capabilities message in R explains any degraded features.
+
+Stream E — Build, tests, documentation
+M2‑E1 — Build flags & feature toggles
+
+Goal: Add feature flags for windowing and keep headless default on (CRAN‑friendly).
+
+Files: Cargo.toml, src/Makevars{,.win}, configure
+
+Steps:
+
+Add conditional compilation flags or env variables consumed by Rust/CMake.
+
+Document in README how to enable windowing locally.
+
+DoD: CI builds headless path; local dev can enable windowing flag and run vk_view().
+
+M2‑E2 — Tests
+
+Goal: Minimal, stable tests for new functionality (no GPU GUI requirements).
+
+Files: tests/testthat/test-render-headless.R, tests/testthat/test-ingest.R
+
+Steps:
+
+Headless render: assert non‑empty raw() or temporary file created + size range.
+
+Ingestion: small sf/terra fixtures → mesh sizes / normal vectors sanity checks.
+
+DoD: devtools::test() passes on all platforms; CI saves headless artifact PNGs for inspection.
+
+M2‑E3 — Docs
+
+Goal: Update docs and vignette for new API.
+
+Files: roxygen in R wrappers; vignettes/02-geodata.Rmd
+
+Steps:
+
+Expand examples: build scene → add mesh/light → render headless.
+
+Note windowing feature flag; add macOS caveats.
+
+DoD: devtools::document() clean; vignette knits locally without network.
+
+Suggested task ordering (parallel‑friendly)
+A1 (headless) → C1 (basic shading) → C2 (materials/lights)
+
+In parallel: B1 (mesh schema) → B2/B3 (extrusion/heightmap) → B4 (points)
+
+After headless is stable: A2 (windowing), A3 (camera), D1/D2 (macOS flags)
+
+Always keep E1/E2/E3 updated (build flags, tests, docs).
