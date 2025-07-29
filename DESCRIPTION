@@ -1,0 +1,22 @@
+Package: vulkanR
+Type: Package
+Title: Offscreen GPU Renderer Using Rust and wgpu
+Version: 0.1.0
+Authors@R:
+    c(person(given = "vulkanR", family = "Developer", email = "developer@example.com", role = c("aut", "cre")))
+Description: Provides an offscreen GPU renderer for R using Rust, extendr, and wgpu. Features headless rendering to PNG files with WGSL shaders compiled at runtime. Supports Vulkan backend on Windows/Linux and Metal on macOS for deterministic rendering without requiring Vulkan SDK installation.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Config/testthat/edition: 3
+SystemRequirements: Cargo (Rust toolchain with rustc and cargo); GPU with Vulkan (Windows/Linux) or Metal (macOS); on CI: mesa-vulkan-drivers, vulkan-tools, libvulkan1
+Suggests:
+    testthat (>= 3.0.0),
+    png,
+    base64enc,
+    rextendr
+Config/rextendr/version: 0.4.1
+Depends: 
+    R (>= 4.2)
