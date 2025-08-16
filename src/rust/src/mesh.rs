@@ -10,7 +10,7 @@ impl HeightfieldMesh {
     pub fn new(z_data: &[f32], rows: usize, cols: usize, scale_z: f32) -> Result<Self, VulkanRError> {
         if z_data.len() != rows * cols {
             return Err(VulkanRError::InvalidInput {
-                param: "z".to_string(),
+                param: "z",
                 reason: format!("z_data length {} doesn't match rows*cols {}", z_data.len(), rows * cols),
             });
         }

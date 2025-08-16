@@ -6,7 +6,7 @@ pub enum VulkanRError {
     DeviceInit(String),
     ShaderCompilation(String),
     OutOfMemory { requested: usize, available: usize },
-    InvalidInput { param: String, reason: String },
+    InvalidInput { param: &'static str, reason: String },
     Capability(String),
     Io(String),
 }
