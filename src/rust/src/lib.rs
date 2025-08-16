@@ -1,37 +1,52 @@
+#[cfg(feature = "ffi")]
 use extendr_api::prelude::*;
 
 mod renderer;
 mod mesh;
 mod shaders;
+mod errors;
 
 use renderer::WgpuRenderer;
+pub use errors::VulkanRError;
 
 /// Get GPU information
-#[extendr]
-fn gpu_info() -> extendr_api::Result<String> {
-    let renderer = WgpuRenderer::new().map_err(|e| extendr_api::Error::Other(e.to_string()))?;
+#[cfg_attr(feature = "ffi", extendr)]
+fn gpu_info() -> Result<String, VulkanRError> {
+    let renderer = WgpuRenderer::new()?;
     Ok(renderer.get_info())
 }
 
 /// Render heightmap to PNG
-#[extendr]
+#[cfg_attr(feature = "ffi", extendr)]
 fn render_heightmap(
     path: &str,
-    z: RMatrix<f64>,
+    #[cfg(feature = "ffi")] z: RMatrix<f64>,
+    #[cfg(not(feature = "ffi"))] z: Vec<f64>,
+    #[cfg(not(feature = "ffi"))] rows: usize,
+    #[cfg(not(feature = "ffi"))] cols: usize,
     width: i32,
     height: i32,
     scale_z: f64,
     fov_deg: f64,
     sun_dir: Vec<f64>,
-) -> extendr_api::Result<()> {
-    let z_data: Vec<f32> = z.data().iter().map(|&x| x as f32).collect();
-    let rows = z.nrows();
-    let cols = z.ncols();
+) -> Result<(), VulkanRError> {
 
-    let mut renderer = WgpuRenderer::new().map_err(|e| extendr_api::Error::Other(e.to_string()))?;
+    #[cfg(feature = "ffi")]
+    let (z_data, rows, cols) = {
+        let z_data: Vec<f32> = z.data().iter().map(|&x| x as f32).collect();
+        (z_data, z.nrows(), z.ncols())
+    };
+
+    #[cfg(not(feature = "ffi"))]
+    let z_data: Vec<f32> = z.iter().map(|&x| x as f32).collect();
+
+    let mut renderer = WgpuRenderer::new()?;
 
     if sun_dir.len() != 3 {
-        return Err(extendr_api::Error::Other("sun_dir must have length 3".to_string()));
+        return Err(VulkanRError::InvalidInput {
+            param: "sun_dir".to_string(),
+            reason: "must have length 3".to_string(),
+        });
     }
     let sun_dir_f32 = [sun_dir[0] as f32, sun_dir[1] as f32, sun_dir[2] as f32];
 
@@ -46,12 +61,12 @@ fn render_heightmap(
             scale_z as f32,
             fov_deg as f32,
             sun_dir_f32,
-        )
-        .map_err(|e| extendr_api::Error::Other(e.to_string()))?;
+        )?;
 
     Ok(())
 }
 
+#[cfg(feature = "ffi")]
 extendr_module! {
     mod vulkanR;
     fn gpu_info;

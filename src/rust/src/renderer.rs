@@ -1,4 +1,3 @@
-use anyhow::{Context, Result, anyhow};
 use wgpu::*;
 use wgpu::util::DeviceExt;
 use glam::{Mat4, Vec3};
@@ -7,6 +6,7 @@ use std::path::Path;
 
 use crate::mesh::HeightfieldMesh;
 use crate::shaders::{VERTEX_SHADER, FRAGMENT_SHADER};
+use crate::errors::VulkanRError;
 
 /// Renderer holding the wgpu device and queue.
 pub struct WgpuRenderer {
@@ -17,7 +17,7 @@ pub struct WgpuRenderer {
 
 impl WgpuRenderer {
     /// Create a new renderer using Vulkan (Windows/Linux) or Metal (macOS).
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, VulkanRError> {
         let instance = Instance::new(InstanceDescriptor {
             backends: if cfg!(target_os = "macos") {
                 Backends::METAL
@@ -32,7 +32,7 @@ impl WgpuRenderer {
             compatible_surface: None,
             force_fallback_adapter: false,
         }))
-        .ok_or_else(|| anyhow!("Failed to find suitable GPU adapter"))?;
+        .ok_or_else(|| VulkanRError::DeviceInit("Failed to find suitable GPU adapter".to_string()))?;
 
         let adapter_info = adapter.get_info();
 
@@ -43,7 +43,7 @@ impl WgpuRenderer {
                 required_limits: Limits::default(),
             },
             None,
-        ))?;
+        )).map_err(|e| VulkanRError::DeviceInit(format!("Failed to get device: {}", e)))?;
 
         Ok(Self { device, queue, adapter_info })
     }
@@ -73,9 +73,10 @@ impl WgpuRenderer {
         scale_z: f32,
         fov_deg: f32,
         sun_dir: [f32; 3],
-    ) -> Result<()> {
+    ) -> Result<(), VulkanRError> {
         // Build mesh (positions+normals+colors, 9 floats per vertex)
-        let mesh = HeightfieldMesh::new(z_data, rows, cols, scale_z)?;
+        let mesh = HeightfieldMesh::new(z_data, rows, cols, scale_z)
+            .map_err(|e| VulkanRError::InvalidInput { param: "z".to_string(), reason: e.to_string() })?;
 
         // Render target textures
         let color_tex = self.device.create_texture(&TextureDescriptor {
@@ -298,7 +299,9 @@ impl WgpuRenderer {
         let (tx, rx) = std::sync::mpsc::channel();
         slice.map_async(MapMode::Read, move |r| { tx.send(r).unwrap(); });
         self.device.poll(Maintain::Wait);
-        rx.recv().unwrap()?;
+        rx.recv()
+            .map_err(|e| VulkanRError::DeviceInit(format!("Failed to receive from channel: {}", e)))?
+            .map_err(|e| VulkanRError::DeviceInit(format!("Failed to map buffer: {}", e)))?;
         let data = slice.get_mapped_range();
 
         // Compose PNG (remove row padding)
@@ -316,7 +319,7 @@ impl WgpuRenderer {
 
         // Save
         img.save(Path::new(output_path))
-            .with_context(|| format!("Failed to save image to {}", output_path))?;
+            .map_err(|e| VulkanRError::Io(format!("Failed to save image to {}: {}", output_path, e)))?;
 
         Ok(())
     }

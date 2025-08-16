@@ -1,5 +1,3 @@
-use anyhow::{Result, anyhow};
-
 #[derive(Debug)]
 pub struct HeightfieldMesh {
     pub vertices: Vec<f32>,
@@ -7,9 +5,9 @@ pub struct HeightfieldMesh {
 }
 
 impl HeightfieldMesh {
-    pub fn new(z_data: &[f32], rows: usize, cols: usize, scale_z: f32) -> Result<Self> {
+    pub fn new(z_data: &[f32], rows: usize, cols: usize, scale_z: f32) -> Result<Self, String> {
         if z_data.len() != rows * cols {
-            return Err(anyhow!("z_data length {} doesn't match rows*cols {}", z_data.len(), rows * cols));
+            return Err(format!("z_data length {} doesn't match rows*cols {}", z_data.len(), rows * cols));
         }
 
         let mut vertices = Vec::new();
