@@ -1,6 +1,3 @@
-#[cfg(feature = "ffi")]
-use extendr_api::prelude::*;
-
 #[derive(Debug)]
 pub enum VulkanRError {
     DeviceInit(String),
