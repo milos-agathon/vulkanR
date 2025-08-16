@@ -46,29 +46,25 @@ gpu_info <- function() {
 #' )
 #' }
 .validate_inputs <- function(z, width, height, sun_dir, color_range) {
-  if (!(is.matrix(z) && is.numeric(z))) {
-    .vkr_stop("`z` must be a numeric matrix", "vkr_input")
-  }
-  if (any(!is.finite(z))) {
-    .vkr_stop("`z` contains NA/Inf; please clean input", "vkr_input")
-  }
-  # width/height: positive integers
+  if (!(is.matrix(z) && is.numeric(z))) .vkr_stop("`z` must be a numeric matrix", "vkr_input")
+  if (any(!is.finite(z))) .vkr_stop("`z` contains NA/Inf; please clean input", "vkr_input")
+
   if (length(width) != 1L || length(height) != 1L ||
       !is.finite(width) || !is.finite(height) ||
       width <= 0 || height <= 0 ||
       width != as.integer(width) || height != as.integer(height)) {
     .vkr_stop("`width`/`height` must be positive integers", "vkr_input")
   }
-  # MVP: require dims to match; no resampling yet
+
   if (nrow(z) != height || ncol(z) != width) {
     .vkr_stop(sprintf("`z` dims %dx%d must match width=%d height=%d (no resampling in MVP)",
                       nrow(z), ncol(z), width, height), "vkr_input")
   }
-  # sun_dir: length-3 finite numeric
+
   if (!(is.numeric(sun_dir) && length(sun_dir) == 3L && all(is.finite(sun_dir)))) {
     .vkr_stop("`sun_dir` must be numeric length-3 (finite)", "vkr_input")
   }
-  # color_range: NULL or length-2 ascending numeric
+
   if (!is.null(color_range)) {
     if (!(is.numeric(color_range) && length(color_range) == 2L &&
           all(is.finite(color_range)) && color_range[1] < color_range[2])) {
@@ -86,7 +82,6 @@ render_heightmap <- function(path, z,
                              color_range = NULL) {
   .validate_inputs(z, width, height, sun_dir, color_range)
 
-  # call into FFI with tryCatch -> map extendr_error to classed errors
   tryCatch(
     .Call("wrap__render_heightmap", path, z, as.integer(width), as.integer(height),
           as.numeric(scale_z), as.numeric(fov_deg), as.numeric(sun_dir),
@@ -95,7 +90,7 @@ render_heightmap <- function(path, z,
       if (inherits(e, "extendr_error")) .handle_extendr_err(e) else stop(e)
     }
   )
-  invisible(structure(list(path = normalizePath(path, mustWork=TRUE),
+  invisible(structure(list(path = normalizePath(path, mustWork = TRUE),
                            width = width, height = height),
                       class = "vulkanr_result"))
 }
