@@ -5,7 +5,8 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["ffi"]          # FFI on by default for R builds
+# FFI on by default for R builds
+default = ["ffi"]
 ffi = ["extendr-api"]
 
 [dependencies]
@@ -16,10 +17,10 @@ image       = { version = "0.24.8", default-features = false, features = ["png"]
 pollster    = "0.3"
 bytemuck    = { version = "1", features = ["derive"] }
 
-# Top-level wgpu: keep lean; WGSL only
+# Top-level wgpu: lean; shader language only (backends via core/hal below)
 wgpu        = { version = "=0.19.4", default-features = false, features = ["wgsl"] }
 
-# ---- Backend selection via core/hal (disable all defaults; enable only native backends)
+# ---- Backend selection via core/hal (disable defaults; enable only native backends)
 
 # Windows: Vulkan + D3D12
 [target.'cfg(windows)'.dependencies]
