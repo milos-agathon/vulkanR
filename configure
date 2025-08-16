@@ -1,0 +1,82 @@
+#!/usr/bin/env sh
+# Posix configure for vulkanR
+# Checks Rust toolchain and gives actionable guidance; respects RUSTUP_TOOLCHAIN.
+set -eu
+
+echo "configure: vulkanR — checking Rust toolchain"
+MIN_RUST="1.75.0"
+TC="${RUSTUP_TOOLCHAIN:-}"
+
+# Portable semantic-ish version compare: returns 0 if $1 >= $2
+ver_ge() {
+  a="$1"; b="$2"
+  IFS=. read -r a1 a2 a3 <<EOF
+$a
+EOF
+  IFS=. read -r b1 b2 b3 <<EOF
+$b
+EOF
+  a1=${a1:-0}; a2=${a2:-0}; a3=${a3:-0}
+  b1=${b1:-0}; b2=${b2:-0}; b3=${b3:-0}
+  # Strip trailing non-digits (e.g., "1.75.0-beta")
+  a3=${a3%%[^0-9]*}; b3=${b3%%[^0-9]*}
+  [ "$a1" -gt "$b1" ] && return 0
+  [ "$a1" -lt "$b1" ] && return 1
+  [ "$a2" -gt "$b2" ] && return 0
+  [ "$a2" -lt "$b2" ] && return 1
+  [ "${a3:-0}" -ge "${b3:-0}" ]
+}
+
+with_toolchain() {
+  if [ -n "$TC" ]; then
+    echo "configure: using RUSTUP_TOOLCHAIN=+$TC"
+    echo "cargo: $(command -v cargo 2>/dev/null || true)"
+    cargo "+$TC" --version  >/dev/null 2>&1 || return 1
+    rustc "+$TC" --version  >/dev/null 2>&1 || return 1
+    CVER="$(cargo  "+$TC" --version | awk '{print $2}')"
+    RVER="$(rustc  "+$TC" --version | awk '{print $2}')"
+  else
+    command -v cargo >/dev/null 2>&1 || return 1
+    command -v rustc >/dev/null 2>&1 || return 1
+    CVER="$(cargo --version | awk '{print $2}')"
+    RVER="$(rustc --version | awk '{print $2}')"
+  fi
+  echo "configure: cargo $CVER, rustc $RVER"
+  ver_ge "$RVER" "$MIN_RUST"
+}
+
+if ! with_toolchain; then
+  echo ""
+  echo "configure: ERROR — Rust toolchain not found or too old (need rustc >= $MIN_RUST)."
+  echo ""
+  echo "You have two options:"
+  echo "  1) Install/upgrade Rust (rustup) and re-run install."
+  echo "  2) Use prebuilt binaries for your OS (recommended if you don't need to build from source)."
+  echo ""
+  echo "Binaries:"
+  if [ -n "${VULKANR_BIN_URL:-}" ]; then
+    echo "  • ${VULKANR_BIN_URL}"
+  else
+    echo "  • See this package's GitHub Releases page for downloads."
+  fi
+  if [ -n "${VULKANR_R_UNIVERSE:-}" ]; then
+    echo "  • R-universe one-liner: install.packages(\"vulkanR\", repos=\"${VULKANR_R_UNIVERSE}\")"
+  fi
+  echo ""
+  echo "Tip: set RUSTUP_TOOLCHAIN if you have multiple Rust toolchains, e.g.:"
+  echo "     RUSTUP_TOOLCHAIN=1.75.0 R CMD INSTALL ."
+  exit 1
+fi
+
+# Linux headless hint (lavapipe)
+UNAME_S="$(uname -s 2>/dev/null || echo unknown)"
+if [ "$UNAME_S" = "Linux" ]; then
+  LVP="/usr/share/vulkan/icd.d/lvp_icd.x86_64.json"
+  if [ -r "$LVP" ] && [ -z "${VK_ICD_FILENAMES:-}" ]; then
+    echo "configure: hint — headless Vulkan? You can set:"
+    echo "           export VK_ICD_FILENAMES=$LVP"
+  fi
+fi
+
+echo "configure: OK — Rust toolchain satisfies >= $MIN_RUST"
+exit 0

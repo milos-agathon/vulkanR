@@ -10,5 +10,3 @@ src/rust/Cargo.lock
 *.png
 !tests/testthat/ref_*.png
 src/rust/vendor
-src/Makevars
-src/Makevars.win
