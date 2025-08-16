@@ -8,7 +8,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 # R binding
-extendr-api = "0.6"
+extendr-api = { version = "0.6", optional = true }
 
 # High-level GPU API, no default backends
 wgpu = { version = "0.19.4", default-features = false, features = ["wgsl"] }
@@ -39,3 +39,7 @@ debug = true
 [profile.release]
 lto = true
 codegen-units = 1
+
+[features]
+default = ["ffi"]
+ffi = ["extendr-api"]

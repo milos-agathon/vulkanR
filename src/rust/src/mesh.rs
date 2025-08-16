@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use crate::errors::VulkanRError;
 
 #[derive(Debug)]
 pub struct HeightfieldMesh {
@@ -7,9 +7,12 @@ pub struct HeightfieldMesh {
 }
 
 impl HeightfieldMesh {
-    pub fn new(z_data: &[f32], rows: usize, cols: usize, scale_z: f32) -> Result<Self> {
+    pub fn new(z_data: &[f32], rows: usize, cols: usize, scale_z: f32) -> Result<Self, VulkanRError> {
         if z_data.len() != rows * cols {
-            return Err(anyhow!("z_data length {} doesn't match rows*cols {}", z_data.len(), rows * cols));
+            return Err(VulkanRError::InvalidInput {
+                param: "z",
+                reason: format!("z_data length {} doesn't match rows*cols {}", z_data.len(), rows * cols),
+            });
         }
 
         let mut vertices = Vec::new();
