@@ -3,16 +3,25 @@ use wgpu::util::DeviceExt;
 use glam::{Mat4, Vec3};
 use image::{ImageBuffer, Rgba};
 use std::path::Path;
+use std::env;
 
 use crate::mesh::HeightfieldMesh;
 use crate::shaders::{VERTEX_SHADER, FRAGMENT_SHADER};
 use crate::errors::VulkanRError;
+
+#[derive(Debug, Clone, Copy)]
+pub struct RendererCaps {
+    pub max_texture_dimension_2d: u32,
+    pub max_bind_groups: u32,
+}
 
 /// Renderer holding the wgpu device and queue.
 pub struct WgpuRenderer {
     pub device: Device,
     pub queue: Queue,
     pub adapter_info: AdapterInfo,
+    pub caps: RendererCaps,
+    vram_budget_bytes: usize,
 }
 
 impl WgpuRenderer {
@@ -35,6 +44,12 @@ impl WgpuRenderer {
         .ok_or_else(|| VulkanRError::DeviceInit("Failed to find suitable GPU adapter".to_string()))?;
 
         let adapter_info = adapter.get_info();
+        // Query limits from the adapter (0.19: adapter.limits())
+        let lim = adapter.limits();
+        let caps = RendererCaps {
+            max_texture_dimension_2d: lim.max_texture_dimension_2d,
+            max_bind_groups: lim.max_bind_groups,
+        };
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &DeviceDescriptor {
@@ -45,10 +60,44 @@ impl WgpuRenderer {
             None,
         )).map_err(|e| VulkanRError::DeviceInit(format!("Failed to get device: {}", e)))?;
 
-        Ok(Self { device, queue, adapter_info })
+        // VRAM budget: env override or default (MiB -> bytes)
+        let budget_mb: usize = env::var("VULKANR_VRAM_BUDGET_MB")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(256);
+        let vram_budget_bytes = budget_mb * 1024 * 1024;
+
+        Ok(Self { device, queue, adapter_info, caps, vram_budget_bytes })
     }
 
     /// Return a human‑readable adapter string.
+    #[inline]
+    fn bytes_for_rgba8(width: u32, height: u32) -> usize {
+        width as usize * height as usize * 4
+    }
+
+    pub fn ensure_target_ok(&self, width: u32, height: u32) -> Result<(), VulkanRError> {
+        let m = self.caps.max_texture_dimension_2d;
+        if width == 0 || height == 0 {
+            return Err(VulkanRError::InvalidInput {
+                param: "width/height".into(),
+                reason: "must be positive".into(),
+            });
+        }
+        if width > m || height > m {
+            return Err(VulkanRError::Capability(format!(
+                "Requested {width}x{height} exceeds device limit {m}x{m}"
+            )));
+        }
+
+        let need = Self::bytes_for_rgba8(width, height);
+        if need > self.vram_budget_bytes {
+            return Err(VulkanRError::OutOfMemory {
+                requested: need,
+                available: self.vram_budget_bytes,
+            });
+        }
+        Ok(())
+    }
+
     pub fn get_info(&self) -> String {
         let dtype = match self.adapter_info.device_type {
             DeviceType::DiscreteGpu => "Discrete GPU",
@@ -59,6 +108,17 @@ impl WgpuRenderer {
         };
         format!("Backend: {:?}, Device: {} ({})",
                 self.adapter_info.backend, self.adapter_info.name, dtype)
+    }
+
+    pub fn get_backend_name(&self) -> String {
+        format!("{:?}", self.adapter_info.backend)
+    }
+    pub fn get_device_name(&self) -> String {
+        self.adapter_info.name.clone()
+    }
+
+    pub fn get_vram_budget_bytes(&self) -> usize {
+        self.vram_budget_bytes
     }
 
     /// Render a heightmap mesh to a PNG file offscreen.

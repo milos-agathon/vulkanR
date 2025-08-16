@@ -43,28 +43,60 @@ gpu_info <- function() {
 #'   sun_dir = c(0.6, 0.7, 0.4)
 #' )
 #' }
-render_heightmap <- function(path, z, width = 64L, height = 64L,
-                             scale_z = 1.0, fov_deg = 35,
-                             sun_dir = c(0.6, 0.7, 0.4)) {
-  # Input validation - path validation must come first and include exact phrase expected by tests
-  if (!is.character(path) || length(path) != 1) stop("`path` must be a single character string", call. = FALSE)
-  if (!is.matrix(z) || !is.numeric(z)) stop("z must be a numeric matrix", call. = FALSE)
-  if (any(!is.finite(z))) stop("z contains non-finite values (Inf/NA/NaN)", call. = FALSE)
-  if (nrow(z) < 2 || ncol(z) < 2) stop("z must be at least 2x2", call. = FALSE)
-  width  <- as.integer(width);  if (length(width) != 1L || is.na(width)  || width  <= 0L) stop("width must be a positive integer",  call. = FALSE)
-  height <- as.integer(height); if (length(height) != 1L || is.na(height) || height <= 0L) stop("height must be a positive integer", call. = FALSE)
-  if (!is.numeric(scale_z) || length(scale_z) != 1 || scale_z <= 0) stop("scale_z must be a positive number", call. = FALSE)
-  if (!is.numeric(fov_deg) || length(fov_deg) != 1 || fov_deg <= 0 || fov_deg >= 180) stop("fov_deg must be between 0 and 180", call. = FALSE)
-  if (!is.numeric(sun_dir) || length(sun_dir) != 3) stop("sun_dir must be a numeric vector of length 3", call. = FALSE)
+# assumes .vkr_stop() and .handle_extendr_err() already exist (A1.1)
 
-  # Call the native symbol directly. The Rust function signature expects 7 args.
-  res <- .Call("wrap__render_heightmap",
-               path, z, width, height, as.numeric(scale_z),
-               as.numeric(fov_deg), as.numeric(sun_dir),
-               PACKAGE = "vulkanR")
-
-  if (inherits(res, "extendr_result") && !is.null(res$err)) {
-    stop("Render failed: ", res$err, call. = FALSE)
+.validate_inputs <- function(z, width, height, sun_dir, color_range) {
+  # z: numeric matrix only (MVP does not resample)
+  if (!(is.matrix(z) && is.numeric(z))) {
+    .vkr_stop("`z` must be a numeric matrix", "vkr_input")
+  }
+  if (any(!is.finite(z))) {
+    .vkr_stop("`z` contains NA/Inf; please clean input", "vkr_input")
+  }
+  # width/height: positive integers
+  if (length(width) != 1L || length(height) != 1L ||
+      !is.finite(width) || !is.finite(height) ||
+      width <= 0 || height <= 0 ||
+      width != as.integer(width) || height != as.integer(height)) {
+    .vkr_stop("`width`/`height` must be positive integers", "vkr_input")
+  }
+  # MVP: require dims to match; no resampling yet
+  if (nrow(z) != height || ncol(z) != width) {
+    .vkr_stop(sprintf("`z` dims %dx%d must match width=%d height=%d (no resampling in MVP)",
+                      nrow(z), ncol(z), width, height), "vkr_input")
+  }
+  # sun_dir: length-3 finite numeric
+  if (!(is.numeric(sun_dir) && length(sun_dir) == 3L && all(is.finite(sun_dir)))) {
+    .vkr_stop("`sun_dir` must be numeric length-3 (finite)", "vkr_input")
+  }
+  # color_range: NULL or length-2 ascending numeric
+  if (!is.null(color_range)) {
+    if (!(is.numeric(color_range) && length(color_range) == 2L &&
+          all(is.finite(color_range)) && color_range[1] < color_range[2])) {
+      .vkr_stop("`color_range` must be length-2 ascending numeric if provided", "vkr_input")
+    }
   }
   invisible(TRUE)
+}
+
+render_heightmap <- function(path, z,
+                             width = 64L, height = 64L,
+                             scale_z = 1.0, fov_deg = 35,
+                             sun_dir = c(0.6, 0.7, 0.4),
+                             colormap = c("gray","terrain","viridis","turbo")[1],
+                             color_range = NULL) {
+  .validate_inputs(z, width, height, sun_dir, color_range)
+
+  # call into FFI with tryCatch -> map extendr_error to classed errors
+  tryCatch(
+    .Call("wrap__render_heightmap", path, z, as.integer(width), as.integer(height),
+          as.numeric(scale_z), as.numeric(fov_deg), as.numeric(sun_dir),
+          PACKAGE="vulkanR"),
+    error = function(e) {
+      if (inherits(e, "extendr_error")) .handle_extendr_err(e) else stop(e)
+    }
+  )
+  invisible(structure(list(path = normalizePath(path, mustWork=TRUE),
+                           width = width, height = height),
+                      class = "vulkanr_result"))
 }
