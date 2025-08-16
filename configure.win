@@ -1,0 +1,55 @@
+@echo off
+REM configure.win for vulkanR — checks Rust toolchain (rustc >= 1.75.0), respects RUSTUP_TOOLCHAIN
+
+setlocal ENABLEDELAYEDEXPANSION
+set MIN_RUST=1.75.0
+
+echo configure.win: vulkanR — checking Rust toolchain
+
+REM Choose commands, respecting RUSTUP_TOOLCHAIN if set.
+if defined RUSTUP_TOOLCHAIN (
+  for /f "tokens=2" %%v in ('rustc +%RUSTUP_TOOLCHAIN% --version') do set RVER=%%v
+  for /f "tokens=2" %%v in ('cargo +%RUSTUP_TOOLCHAIN% --version') do set CVER=%%v
+) else (
+  where cargo >NUL 2>&1 || goto :norust
+  where rustc >NUL 2>&1 || goto :norust
+  for /f "tokens=2" %%v in ('rustc --version') do set RVER=%%v
+  for /f "tokens=2" %%v in ('cargo --version') do set CVER=%%v
+)
+
+echo configure.win: cargo %CVER%, rustc %RVER%
+
+REM Use PowerShell to compare as [version]
+powershell -NoProfile -Command ^
+  "$ok=([version]'%RVER%') -ge ([version]'%MIN_RUST%'); if($ok){exit 0}else{exit 1}"
+if errorlevel 1 goto :toolold
+
+echo configure.win: OK — Rust toolchain satisfies >= %MIN_RUST%
+exit /b 0
+
+:norust
+echo.
+echo configure.win: ERROR — Rust toolchain not found (need rustc >= %MIN_RUST%).
+echo.
+echo You have two options:
+echo   1^) Install/upgrade Rust (via rustup) and re-run install.
+echo   2^) Use prebuilt binaries for your OS (recommended if you don't need to build from source).
+echo.
+if defined VULKANR_BIN_URL (
+  echo Binaries: %VULKANR_BIN_URL%
+) else (
+  echo Binaries: See this package's GitHub Releases page for downloads.
+)
+if defined VULKANR_R_UNIVERSE (
+  echo R-universe one-liner: install.packages("vulkanR", repos="%VULKANR_R_UNIVERSE%")
+)
+echo.
+echo Tip: set RUSTUP_TOOLCHAIN if you have multiple toolchains, e.g.:
+echo      set RUSTUP_TOOLCHAIN=1.75.0 ^& R CMD INSTALL .
+exit /b 1
+
+:toolold
+echo.
+echo configure.win: ERROR — rustc %RVER% is too old (need >= %MIN_RUST%).
+echo Follow the guidance above to install/upgrade Rust or use prebuilt binaries.
+exit /b 1

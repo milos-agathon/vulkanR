@@ -1,0 +1,6 @@
+# Makevars for POSIX builds: call rextendr to build Rust crate
+all:
+	"$(R_HOME)/bin$(R_ARCH_BIN)/Rscript" -e "rextendr::rust_build()"
+
+clean:
+	- "$(R_HOME)/bin$(R_ARCH_BIN)/Rscript" -e "rextendr::rust_clean()"
