@@ -1,45 +1,38 @@
+# src/rust/Cargo.toml
 [package]
 name = "vulkanr"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["staticlib"]
-
-[dependencies]
-# R binding
-extendr-api = { version = "0.6", optional = true }
-
-# High-level GPU API, no default backends
-wgpu = { version = "0.19.4", default-features = false, features = ["wgsl"] }
-
-# Runtime helpers
-anyhow   = "1"
-pollster = "0.3"
-image    = "0.24"
-glam     = "0.27"
-
-# Derives for safe POD casts
-bytemuck = { version = "1.23", features = ["derive"] }
-
-# ---- Backend selection (critical) ----
-# On Windows/Linux: Vulkan only
-[target.'cfg(not(target_os = "macos"))'.dependencies]
-wgpu-core = { version = "0.19.4", default-features = false, features = ["vulkan"] }
-wgpu-hal  = { version = "0.19.5", default-features = false, features = ["vulkan"] }
-
-# On macOS: Metal only
-[target.'cfg(target_os = "macos")'.dependencies]
-wgpu-core = { version = "0.19.4", default-features = false, features = ["metal"] }
-wgpu-hal  = { version = "0.19.5", default-features = false, features = ["metal"] }
-
-[profile.dev]
-debug = true
-
-[profile.release]
-lto = true
-codegen-units = 1
-
 [features]
+# FFI on by default for R builds
 default = ["ffi"]
 ffi = ["extendr-api"]
+
+[dependencies]
+extendr-api = { version = "0.6", optional = true }
+glam        = "0.27"
+# Avoid Rayon (keeps rustc 1.75 ok)
+image       = { version = "0.24.8", default-features = false, features = ["png"] }
+pollster    = "0.3"
+bytemuck    = { version = "1", features = ["derive"] }
+
+# Top-level wgpu: lean; shader language only (backends via core/hal below)
+wgpu        = { version = "=0.19.4", default-features = false, features = ["wgsl"] }
+
+# ---- Backend selection via core/hal (disable defaults; enable only native backends)
+
+# Windows: Vulkan + D3D12
+[target.'cfg(windows)'.dependencies]
+wgpu-core = { version = "=0.19.4", default-features = false, features = ["vulkan", "dx12"] }
+wgpu-hal  = { version = "=0.19.5", default-features = false, features = ["vulkan", "dx12"] }
+
+# Linux: Vulkan only
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu-core = { version = "=0.19.4", default-features = false, features = ["vulkan"] }
+wgpu-hal  = { version = "=0.19.5", default-features = false, features = ["vulkan"] }
+
+# macOS: Metal only
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu-core = { version = "=0.19.4", default-features = false, features = ["metal"] }
+wgpu-hal  = { version = "=0.19.5", default-features = false, features = ["metal"] }
