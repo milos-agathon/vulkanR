@@ -75,8 +75,7 @@ impl WgpuRenderer {
         sun_dir: [f32; 3],
     ) -> Result<(), VulkanRError> {
         // Build mesh (positions+normals+colors, 9 floats per vertex)
-        let mesh = HeightfieldMesh::new(z_data, rows, cols, scale_z)
-            .map_err(|e| VulkanRError::InvalidInput { param: "z".to_string(), reason: e.to_string() })?;
+        let mesh = HeightfieldMesh::new(z_data, rows, cols, scale_z)?;
 
         // Render target textures
         let color_tex = self.device.create_texture(&TextureDescriptor {
