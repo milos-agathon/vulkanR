@@ -90,6 +90,7 @@ render_heightmap <- function(path, z,
       if (inherits(e, "extendr_error")) .handle_extendr_err(e) else stop(e)
     }
   )
+
   invisible(structure(list(path = normalizePath(path, mustWork = TRUE),
                            width = width, height = height),
                       class = "vulkanr_result"))
