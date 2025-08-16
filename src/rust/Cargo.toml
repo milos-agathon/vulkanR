@@ -3,43 +3,25 @@ name = "vulkanr"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["staticlib"]
-
-[dependencies]
-# R binding
-extendr-api = { version = "0.6", optional = true }
-
-# High-level GPU API, no default backends
-wgpu = { version = "0.19.4", default-features = false, features = ["wgsl"] }
-
-# Runtime helpers
-anyhow   = "1"
-pollster = "0.3"
-image    = "0.24"
-glam     = "0.27"
-
-# Derives for safe POD casts
-bytemuck = { version = "1.23", features = ["derive"] }
-
-# ---- Backend selection (critical) ----
-# On Windows/Linux: Vulkan only
-[target.'cfg(not(target_os = "macos"))'.dependencies]
-wgpu-core = { version = "0.19.4", default-features = false, features = ["vulkan"] }
-wgpu-hal  = { version = "0.19.5", default-features = false, features = ["vulkan"] }
-
-# On macOS: Metal only
-[target.'cfg(target_os = "macos")'.dependencies]
-wgpu-core = { version = "0.19.4", default-features = false, features = ["metal"] }
-wgpu-hal  = { version = "0.19.5", default-features = false, features = ["metal"] }
-
-[profile.dev]
-debug = true
-
-[profile.release]
-lto = true
-codegen-units = 1
-
 [features]
+# FFI on by default so R builds still work where R is present.
 default = ["ffi"]
 ffi = ["extendr-api"]
+
+[dependencies]
+extendr-api = { version = "0.6", optional = true }
+glam = "0.27"
+image = { version = "0.24.8", default-features = false, features = ["png"] }
+pollster = "0.3"
+bytemuck = { version = "1", features = ["derive"] }
+wgpu = { version = "0.19.4", default-features = false, features = ["wgsl"] }
+
+# ---- Backend selection (critical) ----
+[target.'cfg(all(target_os = "linux", not(target_arch = "wasm32")))'.dependencies]
+wgpu-hal = { version = "0.19.5", features = ["vulkan"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+wgpu-hal = { version = "0.19.5", features = ["dx12"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu-hal = { version = "0.19.5", features = ["metal"] }
