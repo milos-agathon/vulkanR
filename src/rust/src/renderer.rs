@@ -75,6 +75,41 @@ impl WgpuRenderer {
         })
     }
 
+    /// Validate requested texture dimensions and memory requirements before
+    /// any GPU resources are allocated.  This guards against requests that the
+    /// device cannot satisfy either due to hardware limits or an application
+    /// defined VRAM budget.
+    fn preflight_validate(&self, width: u32, height: u32, bytes_per_pixel: u32) -> Result<(), VulkanRError> {
+        // Basic sanity checks to ensure dimensions are non-zero.  These are
+        // normally enforced by the R wrapper but are checked again for safety.
+        if width == 0 {
+            return Err(VulkanRError::InvalidInput { param: "width", reason: "must be > 0".into() });
+        }
+        if height == 0 {
+            return Err(VulkanRError::InvalidInput { param: "height", reason: "must be > 0".into() });
+        }
+
+        let max_dim = self.limits.max_texture_dimension_2d;
+        if width > max_dim || height > max_dim {
+            return Err(VulkanRError::Capability(format!(
+                "Requested {}x{} exceeds device limit {}x{} (vkr_caps)",
+                width, height, max_dim, max_dim
+            )));
+        }
+
+        // Calculate required memory in bytes using u64 to avoid overflow when
+        // multiplying large dimension values.
+        let req: u64 = (width as u64) * (height as u64) * (bytes_per_pixel as u64);
+        if req > self.vram_budget {
+            return Err(VulkanRError::Capability(format!(
+                "Requested {}x{} with {} B/pixel exceeds VRAM budget {} bytes (vkr_caps)",
+                width, height, bytes_per_pixel, self.vram_budget
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Return a human‑readable adapter string.
     pub fn get_info(&self) -> String {
         let dtype = match self.adapter_info.device_type {
@@ -101,24 +136,9 @@ impl WgpuRenderer {
         fov_deg: f32,
         sun_dir: [f32; 3],
     ) -> Result<(), VulkanRError> {
-        // Validate the requested render size against hardware limits and a
-        // conservative VRAM budget.  This prevents attempting to allocate
-        // textures that are too large for the device or for the available
-        // memory.  All checks happen before any GPU resources are created.
-        let max_dim = self.limits.max_texture_dimension_2d;
-        if width > max_dim || height > max_dim {
-            return Err(VulkanRError::Capability(format!(
-                "Requested {}x{} exceeds device limit {}x{}",
-                width, height, max_dim, max_dim
-            )));
-        }
-        let required_bytes = (width as u64) * (height as u64) * 4; // RGBA8
-        if required_bytes > self.vram_budget {
-            return Err(VulkanRError::Capability(format!(
-                "Image of {}x{} needs {} bytes, over budget {} bytes",
-                width, height, required_bytes, self.vram_budget
-            )));
-        }
+        // Run preflight checks before any GPU resources are created.
+        // We assume 4 bytes per pixel for an RGBA8 render target.
+        self.preflight_validate(width, height, 4)?;
 
         // Build mesh (positions+normals+colors, 9 floats per vertex).  Any
         // failure here is propagated as an InvalidInput or similar error.
