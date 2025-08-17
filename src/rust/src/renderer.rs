@@ -125,8 +125,7 @@ impl WgpuRenderer {
         fov_deg: f32,
         sun_dir: [f32; 3],
     ) -> Result<(), VulkanRError> {
-        // Run preflight checks before any GPU resources are created.
-        // We assume 4 bytes per pixel for an RGBA8 render target.
+        // Single source of truth
         self.preflight_validate(width, height, 4)?;
 
         // Build mesh (positions+normals+colors, 9 floats per vertex).  Any
@@ -481,7 +480,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_dimension_limit() {
+    fn exceeds_limits_message() {
         let limits = Limits {
             max_texture_dimension_2d: 4096,
             ..Default::default()
@@ -497,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_vram_budget() {
+    fn over_budget_message() {
         let limits = Limits {
             max_texture_dimension_2d: 4096,
             ..Default::default()
@@ -513,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_valid_case() {
+    fn valid_passes() {
         let limits = Limits {
             max_texture_dimension_2d: 4096,
             ..Default::default()
