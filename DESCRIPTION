@@ -14,6 +14,7 @@ Config/testthat/edition: 3
 SystemRequirements: Cargo (Rust toolchain with rustc and cargo); GPU with Vulkan (Windows/Linux) or Metal (macOS); on CI: mesa-vulkan-drivers, vulkan-tools, libvulkan1
 Suggests:
     testthat (>= 3.0.0),
+    withr,
     png,
     base64enc,
     rextendr
