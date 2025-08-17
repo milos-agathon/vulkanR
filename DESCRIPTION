@@ -17,7 +17,8 @@ Suggests:
     png,
     base64enc,
     rextendr,
-    withr
+    withr,
+    pkgload
 Config/rextendr/version: 0.4.1
 Depends: 
     R (>= 4.2)
