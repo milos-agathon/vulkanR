@@ -1,0 +1,14 @@
+name: B1 guard
+on: [pull_request]
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Duplicate-tail check
+        run: |
+          set -e
+          test "$(grep -n 'let (w, h)' src/rust/src/lib.rs | wc -l)" -eq 1
+          test "$(grep -n 'renderer\.render_heightmap' src/rust/src/lib.rs | wc -l)" -eq 1
+      - name: Cargo check (no R)
+        run: cargo check --manifest-path src/rust/Cargo.toml --no-default-features
