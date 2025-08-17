@@ -71,23 +71,23 @@ fn render_heightmap(
         });
     }
 
-let (w, h) = (width as u32, height as u32);
+    let (w, h) = (width as u32, height as u32);
 
-let mut renderer = WgpuRenderer::new()?;
-renderer.ensure_target_ok(w, h)?; // B1: guard BEFORE allocation
+    let mut renderer = WgpuRenderer::new()?;
+    renderer.ensure_target_ok(w, h)?; // B1: guard BEFORE allocation
 
-renderer.render_heightmap(
-    path,
-    &z_data,
-    rows,
-    cols,
-    w,
-    h,
-    scale_z as f32,
-    fov_deg as f32,
-    [sun_dir[0] as f32, sun_dir[1] as f32, sun_dir[2] as f32],
-)?;
-Ok(())
+    renderer.render_heightmap(
+        path,
+        &z_data,
+        rows,
+        cols,
+        w,
+        h,
+        scale_z as f32,
+        fov_deg as f32,
+        [sun_dir[0] as f32, sun_dir[1] as f32, sun_dir[2] as f32],
+    )?;
+    Ok(())
 }
 
 #[cfg(feature = "ffi")]
