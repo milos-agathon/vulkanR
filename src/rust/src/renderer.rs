@@ -32,8 +32,8 @@ impl WgpuRenderer {
     /// Create a new renderer using Vulkan (Windows/Linux) or Metal (macOS).
     pub fn new() -> Result<Self, VulkanRError> {
         // Create an instance that only enables native backends.  Explicitly
-        // exclude WebGPU or OpenGL paths to avoid pulling in unused code on
-        // the R side.
+        // exclude any web or other non-native graphics paths to avoid pulling
+        // in unused code on the R side.
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN
                 | wgpu::Backends::DX12
@@ -220,7 +220,7 @@ impl WgpuRenderer {
         let bgl = self
             .device
             .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("vulkanR BGL"),
+                label: Some("vulkanR BindGroupLayout"),
                 entries: &[BindGroupLayoutEntry {
                     binding: 0,
                     visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,

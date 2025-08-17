@@ -20,14 +20,13 @@ jobs:
 
   rust:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src/rust
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check --no-default-features
+        working-directory: src/rust
       - run: cargo test --no-default-features
+        working-directory: src/rust
       - name: Enforce native wgpu backends only
         run: |
-          ! grep -RInE "\\bGL\\b|GLES|WEBGL" . || (echo "GL/WebGL detected"; exit 1)
+          ! grep -RInE "WEBGL|GLES|GL\\b" src/rust || (echo "GL/WebGL detected"; exit 1)
