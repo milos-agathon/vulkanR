@@ -10,20 +10,32 @@ use crate::errors::VulkanRError;
 
 /// Renderer holding the wgpu device and queue.
 pub struct WgpuRenderer {
+    /// Handle to the logical device.  Stored so we can allocate GPU resources.
     pub device: Device,
+    /// Command submission queue associated with `device`.
     pub queue: Queue,
+    /// Basic adapter information exposed for diagnostics.
     pub adapter_info: AdapterInfo,
+    /// Supported optional features of the adapter.  Cached once on creation
+    /// so we don't repeatedly query the adapter on every render call.
+    pub features: Features,
+    /// Hardware limits such as maximum texture size and bind groups.  These
+    /// are queried during initialisation and reused for subsequent renders.
+    pub limits: Limits,
+    /// Simple VRAM budget (in bytes) used to guard allocations.  This prevents
+    /// runaway allocations on devices with limited memory.  Currently fixed at
+    /// 256 MB but could be made configurable later.
+    pub vram_budget: u64,
 }
 
 impl WgpuRenderer {
     /// Create a new renderer using Vulkan (Windows/Linux) or Metal (macOS).
     pub fn new() -> Result<Self, VulkanRError> {
+        // Create an instance that only enables native backends.  Explicitly
+        // exclude the WebGPU/GL backends to avoid pulling in unused code on
+        // the R side.
         let instance = Instance::new(InstanceDescriptor {
-            backends: if cfg!(target_os = "macos") {
-                Backends::METAL
-            } else {
-                Backends::VULKAN
-            },
+            backends: Backends::VULKAN | Backends::DX12 | Backends::METAL,
             ..Default::default()
         });
 
@@ -34,18 +46,33 @@ impl WgpuRenderer {
         }))
         .ok_or_else(|| VulkanRError::DeviceInit("Failed to find suitable GPU adapter".to_string()))?;
 
+        // Cache adapter information and capabilities up front so later render
+        // calls can simply reference the cached values.
         let adapter_info = adapter.get_info();
+        let features = adapter.features();
+        let limits = adapter.limits();
 
+        // Request the logical device with the default features and the limits
+        // reported by the adapter.  Passing the limits through ensures the
+        // device is configured to allow using the full capabilities of the
+        // hardware (subject to wgpu's safety restrictions).
         let (device, queue) = pollster::block_on(adapter.request_device(
             &DeviceDescriptor {
                 label: Some("vulkanR Device"),
                 required_features: Features::empty(),
-                required_limits: Limits::default(),
+                required_limits: limits.clone(),
             },
             None,
         )).map_err(|e| VulkanRError::DeviceInit(format!("Failed to get device: {}", e)))?;
 
-        Ok(Self { device, queue, adapter_info })
+        Ok(Self {
+            device,
+            queue,
+            adapter_info,
+            features,
+            limits,
+            vram_budget: 256 * 1024 * 1024, // 256 MB default budget
+        })
     }
 
     /// Return a human‑readable adapter string.
@@ -74,7 +101,27 @@ impl WgpuRenderer {
         fov_deg: f32,
         sun_dir: [f32; 3],
     ) -> Result<(), VulkanRError> {
-        // Build mesh (positions+normals+colors, 9 floats per vertex)
+        // Validate the requested render size against hardware limits and a
+        // conservative VRAM budget.  This prevents attempting to allocate
+        // textures that are too large for the device or for the available
+        // memory.  All checks happen before any GPU resources are created.
+        let max_dim = self.limits.max_texture_dimension_2d;
+        if width > max_dim || height > max_dim {
+            return Err(VulkanRError::Capability(format!(
+                "Requested {}x{} exceeds device limit {}x{}",
+                width, height, max_dim, max_dim
+            )));
+        }
+        let required_bytes = (width as u64) * (height as u64) * 4; // RGBA8
+        if required_bytes > self.vram_budget {
+            return Err(VulkanRError::Capability(format!(
+                "Image of {}x{} needs {} bytes, over budget {} bytes",
+                width, height, required_bytes, self.vram_budget
+            )));
+        }
+
+        // Build mesh (positions+normals+colors, 9 floats per vertex).  Any
+        // failure here is propagated as an InvalidInput or similar error.
         let mesh = HeightfieldMesh::new(z_data, rows, cols, scale_z)?;
 
         // Render target textures
