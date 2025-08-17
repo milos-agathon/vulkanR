@@ -28,3 +28,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check --no-default-features
       - run: cargo test --no-default-features
+      - name: Enforce native wgpu backends only
+        run: |
+          ! grep -RInE "\\bGL\\b|GLES|WEBGL" . || (echo "GL/WebGL detected"; exit 1)

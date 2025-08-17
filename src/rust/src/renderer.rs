@@ -32,10 +32,13 @@ impl WgpuRenderer {
     /// Create a new renderer using Vulkan (Windows/Linux) or Metal (macOS).
     pub fn new() -> Result<Self, VulkanRError> {
         // Create an instance that only enables native backends.  Explicitly
-        // exclude the WebGPU/GL backends to avoid pulling in unused code on
+        // exclude WebGPU or OpenGL paths to avoid pulling in unused code on
         // the R side.
-        let instance = Instance::new(InstanceDescriptor {
-            backends: Backends::VULKAN | Backends::DX12 | Backends::METAL,
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN
+                | wgpu::Backends::DX12
+                | wgpu::Backends::METAL,
+            dx12_shader_compiler: Default::default(),
             ..Default::default()
         });
 
@@ -488,8 +491,8 @@ mod tests {
         let err = validate_limits(&limits, 256 * 1024 * 1024, 8192, 8192, 4).unwrap_err();
         match err {
             VulkanRError::Capability(msg) => {
-                assert!(msg.contains("exceeds device limit"));
-                assert!(msg.contains("(vkr_caps)"));
+                assert!(msg.contains("exceeds device limit"), "{msg}");
+                assert!(msg.contains("(vkr_caps)"), "{msg}");
             }
             _ => panic!("unexpected error variant"),
         }
@@ -504,8 +507,8 @@ mod tests {
         let err = validate_limits(&limits, 1 * 1024 * 1024, 4096, 4096, 4).unwrap_err();
         match err {
             VulkanRError::Capability(msg) => {
-                assert!(msg.contains("VRAM budget"));
-                assert!(msg.contains("(vkr_caps)"));
+                assert!(msg.contains("VRAM budget"), "{msg}");
+                assert!(msg.contains("(vkr_caps)"), "{msg}");
             }
             _ => panic!("unexpected error variant"),
         }
@@ -518,6 +521,6 @@ mod tests {
             ..Default::default()
         };
         let res = validate_limits(&limits, 256 * 1024 * 1024, 1024, 1024, 4);
-        assert!(res.is_ok());
+        assert!(res.is_ok(), "{res:?}");
     }
 }
