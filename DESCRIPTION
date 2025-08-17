@@ -16,7 +16,8 @@ Suggests:
     testthat (>= 3.0.0),
     png,
     base64enc,
-    rextendr
+    rextendr,
+    withr
 Config/rextendr/version: 0.4.1
 Depends: 
     R (>= 4.2)

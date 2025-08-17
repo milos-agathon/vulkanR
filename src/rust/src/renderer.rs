@@ -1,12 +1,12 @@
-use wgpu::*;
-use wgpu::util::DeviceExt;
 use glam::{Mat4, Vec3};
 use image::{ImageBuffer, Rgba};
 use std::path::Path;
+use wgpu::util::DeviceExt;
+use wgpu::*;
 
-use crate::mesh::HeightfieldMesh;
-use crate::shaders::{VERTEX_SHADER, FRAGMENT_SHADER};
 use crate::errors::VulkanRError;
+use crate::mesh::HeightfieldMesh;
+use crate::shaders::{FRAGMENT_SHADER, VERTEX_SHADER};
 
 /// Renderer holding the wgpu device and queue.
 pub struct WgpuRenderer {
@@ -44,7 +44,9 @@ impl WgpuRenderer {
             compatible_surface: None,
             force_fallback_adapter: false,
         }))
-        .ok_or_else(|| VulkanRError::DeviceInit("Failed to find suitable GPU adapter".to_string()))?;
+        .ok_or_else(|| {
+            VulkanRError::DeviceInit("Failed to find suitable GPU adapter".to_string())
+        })?;
 
         // Cache adapter information and capabilities up front so later render
         // calls can simply reference the cached values.
@@ -63,7 +65,8 @@ impl WgpuRenderer {
                 required_limits: limits.clone(),
             },
             None,
-        )).map_err(|e| VulkanRError::DeviceInit(format!("Failed to get device: {}", e)))?;
+        ))
+        .map_err(|e| VulkanRError::DeviceInit(format!("Failed to get device: {}", e)))?;
 
         Ok(Self {
             device,
@@ -79,35 +82,19 @@ impl WgpuRenderer {
     /// any GPU resources are allocated.  This guards against requests that the
     /// device cannot satisfy either due to hardware limits or an application
     /// defined VRAM budget.
-    fn preflight_validate(&self, width: u32, height: u32, bytes_per_pixel: u32) -> Result<(), VulkanRError> {
-        // Basic sanity checks to ensure dimensions are non-zero.  These are
-        // normally enforced by the R wrapper but are checked again for safety.
-        if width == 0 {
-            return Err(VulkanRError::InvalidInput { param: "width", reason: "must be > 0".into() });
-        }
-        if height == 0 {
-            return Err(VulkanRError::InvalidInput { param: "height", reason: "must be > 0".into() });
-        }
-
-        let max_dim = self.limits.max_texture_dimension_2d;
-        if width > max_dim || height > max_dim {
-            return Err(VulkanRError::Capability(format!(
-                "Requested {}x{} exceeds device limit {}x{} (vkr_caps)",
-                width, height, max_dim, max_dim
-            )));
-        }
-
-        // Calculate required memory in bytes using u64 to avoid overflow when
-        // multiplying large dimension values.
-        let req: u64 = (width as u64) * (height as u64) * (bytes_per_pixel as u64);
-        if req > self.vram_budget {
-            return Err(VulkanRError::Capability(format!(
-                "Requested {}x{} with {} B/pixel exceeds VRAM budget {} bytes (vkr_caps)",
-                width, height, bytes_per_pixel, self.vram_budget
-            )));
-        }
-
-        Ok(())
+    fn preflight_validate(
+        &self,
+        width: u32,
+        height: u32,
+        bytes_per_pixel: u32,
+    ) -> Result<(), VulkanRError> {
+        validate_limits(
+            &self.limits,
+            self.vram_budget,
+            width,
+            height,
+            bytes_per_pixel,
+        )
     }
 
     /// Return a human‑readable adapter string.
@@ -119,8 +106,10 @@ impl WgpuRenderer {
             DeviceType::Cpu => "CPU",
             DeviceType::Other => "Other",
         };
-        format!("Backend: {:?}, Device: {} ({})",
-                self.adapter_info.backend, self.adapter_info.name, dtype)
+        format!(
+            "Backend: {:?}, Device: {} ({})",
+            self.adapter_info.backend, self.adapter_info.name, dtype
+        )
     }
 
     /// Render a heightmap mesh to a PNG file offscreen.
@@ -147,7 +136,11 @@ impl WgpuRenderer {
         // Render target textures
         let color_tex = self.device.create_texture(&TextureDescriptor {
             label: Some("vulkanR Color"),
-            size: Extent3d { width, height, depth_or_array_layers: 1 },
+            size: Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
@@ -157,7 +150,11 @@ impl WgpuRenderer {
         });
         let depth_tex = self.device.create_texture(&TextureDescriptor {
             label: Some("vulkanR Depth"),
-            size: Extent3d { width, height, depth_or_array_layers: 1 },
+            size: Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
@@ -169,16 +166,20 @@ impl WgpuRenderer {
         let depth_view = depth_tex.create_view(&TextureViewDescriptor::default());
 
         // Buffers
-        let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("vulkanR Vertex Buffer"),
-            contents: bytemuck::cast_slice(&mesh.vertices),
-            usage: BufferUsages::VERTEX,
-        });
-        let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("vulkanR Index Buffer"),
-            contents: bytemuck::cast_slice(&mesh.indices),
-            usage: BufferUsages::INDEX,
-        });
+        let vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("vulkanR Vertex Buffer"),
+                contents: bytemuck::cast_slice(&mesh.vertices),
+                usage: BufferUsages::VERTEX,
+            });
+        let index_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("vulkanR Index Buffer"),
+                contents: bytemuck::cast_slice(&mesh.indices),
+                usage: BufferUsages::INDEX,
+            });
 
         // Camera & uniforms
         let aspect = width as f32 / height as f32;
@@ -205,26 +206,30 @@ impl WgpuRenderer {
         uniforms[16..19].copy_from_slice(&sun.to_array());
         uniforms[19] = 0.0;
 
-        let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("vulkanR Uniform Buffer"),
-            contents: bytemuck::cast_slice(&uniforms),
-            usage: BufferUsages::UNIFORM,
-        });
+        let uniform_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("vulkanR Uniform Buffer"),
+                contents: bytemuck::cast_slice(&uniforms),
+                usage: BufferUsages::UNIFORM,
+            });
 
         // Bindings
-        let bgl = self.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("vulkanR BGL"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let bgl = self
+            .device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("vulkanR BGL"),
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
         let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("vulkanR Bind Group"),
             layout: &bgl,
@@ -245,60 +250,82 @@ impl WgpuRenderer {
         });
 
         // Pipeline
-        let layout = self.device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("vulkanR Pipeline Layout"),
-            bind_group_layouts: &[&bgl],
-            push_constant_ranges: &[],
-        });
-        let pipeline = self.device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("vulkanR Pipeline"),
-            layout: Some(&layout),
-            vertex: VertexState {
-                module: &vs,
-                entry_point: "vs_main",
-                buffers: &[VertexBufferLayout {
-                    array_stride: std::mem::size_of::<[f32; 9]>() as BufferAddress,
-                    step_mode: VertexStepMode::Vertex,
-                    attributes: &[ 
-                        VertexAttribute { offset: 0, shader_location: 0, format: VertexFormat::Float32x3 },
-                        VertexAttribute { offset: std::mem::size_of::<[f32; 3]>() as BufferAddress, shader_location: 1, format: VertexFormat::Float32x3 },
-                        VertexAttribute { offset: std::mem::size_of::<[f32; 6]>() as BufferAddress, shader_location: 2, format: VertexFormat::Float32x3 },
-                    ],
-                }],
-            },
-            fragment: Some(FragmentState {
-                module: &fs,
-                entry_point: "fs_main",
-                targets: &[Some(ColorTargetState {
-                    format: TextureFormat::Rgba8UnormSrgb,
-                    blend: Some(BlendState::REPLACE),
-                    write_mask: ColorWrites::ALL,
-                })],
-            }),
-            primitive: PrimitiveState {
-                topology: PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: FrontFace::Ccw,
-                cull_mode: Some(Face::Back),
-                unclipped_depth: false,
-                polygon_mode: PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: Some(DepthStencilState {
-                format: TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::Less,
-                stencil: StencilState::default(),
-                bias: DepthBiasState::default(),
-            }),
-            multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
-            multiview: None,
-        });
+        let layout = self
+            .device
+            .create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("vulkanR Pipeline Layout"),
+                bind_group_layouts: &[&bgl],
+                push_constant_ranges: &[],
+            });
+        let pipeline = self
+            .device
+            .create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("vulkanR Pipeline"),
+                layout: Some(&layout),
+                vertex: VertexState {
+                    module: &vs,
+                    entry_point: "vs_main",
+                    buffers: &[VertexBufferLayout {
+                        array_stride: std::mem::size_of::<[f32; 9]>() as BufferAddress,
+                        step_mode: VertexStepMode::Vertex,
+                        attributes: &[
+                            VertexAttribute {
+                                offset: 0,
+                                shader_location: 0,
+                                format: VertexFormat::Float32x3,
+                            },
+                            VertexAttribute {
+                                offset: std::mem::size_of::<[f32; 3]>() as BufferAddress,
+                                shader_location: 1,
+                                format: VertexFormat::Float32x3,
+                            },
+                            VertexAttribute {
+                                offset: std::mem::size_of::<[f32; 6]>() as BufferAddress,
+                                shader_location: 2,
+                                format: VertexFormat::Float32x3,
+                            },
+                        ],
+                    }],
+                },
+                fragment: Some(FragmentState {
+                    module: &fs,
+                    entry_point: "fs_main",
+                    targets: &[Some(ColorTargetState {
+                        format: TextureFormat::Rgba8UnormSrgb,
+                        blend: Some(BlendState::REPLACE),
+                        write_mask: ColorWrites::ALL,
+                    })],
+                }),
+                primitive: PrimitiveState {
+                    topology: PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: FrontFace::Ccw,
+                    cull_mode: Some(Face::Back),
+                    unclipped_depth: false,
+                    polygon_mode: PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil: Some(DepthStencilState {
+                    format: TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: CompareFunction::Less,
+                    stencil: StencilState::default(),
+                    bias: DepthBiasState::default(),
+                }),
+                multisample: MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+            });
 
         // Encode render pass
-        let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("vulkanR Encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("vulkanR Encoder"),
+            });
 
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -307,13 +334,21 @@ impl WgpuRenderer {
                     view: &color_view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
+                        load: LoadOp::Clear(Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
                         store: StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                     view: &depth_view,
-                    depth_ops: Some(Operations { load: LoadOp::Clear(1.0), store: StoreOp::Store }),
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 occlusion_query_set: None,
@@ -355,7 +390,11 @@ impl WgpuRenderer {
                     rows_per_image: Some(height),
                 },
             },
-            Extent3d { width, height, depth_or_array_layers: 1 },
+            Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -363,17 +402,21 @@ impl WgpuRenderer {
         // Map and read
         let slice = readback.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(MapMode::Read, move |r| { tx.send(r).unwrap(); });
+        slice.map_async(MapMode::Read, move |r| {
+            tx.send(r).unwrap();
+        });
         self.device.poll(Maintain::Wait);
         rx.recv()
-            .map_err(|e| VulkanRError::DeviceInit(format!("Failed to receive from channel: {}", e)))?
+            .map_err(|e| {
+                VulkanRError::DeviceInit(format!("Failed to receive from channel: {}", e))
+            })?
             .map_err(|e| VulkanRError::DeviceInit(format!("Failed to map buffer: {}", e)))?;
         let data = slice.get_mapped_range();
 
         // Compose PNG (remove row padding)
         let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(width, height);
         for y in 0..height {
-            let row = &data[(y * padded) as usize .. (y * padded + unpadded) as usize];
+            let row = &data[(y * padded) as usize..(y * padded + unpadded) as usize];
             for x in 0..width {
                 let o = (x * 4) as usize;
                 let p = Rgba([row[o], row[o + 1], row[o + 2], row[o + 3]]);
@@ -384,10 +427,98 @@ impl WgpuRenderer {
         readback.unmap();
 
         // Save
-        img.save(Path::new(output_path))
-            .map_err(|e| VulkanRError::Io(format!("Failed to save image to {}: {}", output_path, e)))?;
+        img.save(Path::new(output_path)).map_err(|e| {
+            VulkanRError::Io(format!("Failed to save image to {}: {}", output_path, e))
+        })?;
 
         Ok(())
     }
 }
 
+/// Pure helper used for unit testing that applies the same limits checks as
+/// [`WgpuRenderer::preflight_validate`].
+fn validate_limits(
+    limits: &Limits,
+    vram_budget: u64,
+    width: u32,
+    height: u32,
+    bytes_per_pixel: u32,
+) -> Result<(), VulkanRError> {
+    if width == 0 {
+        return Err(VulkanRError::InvalidInput {
+            param: "width",
+            reason: "must be > 0".into(),
+        });
+    }
+    if height == 0 {
+        return Err(VulkanRError::InvalidInput {
+            param: "height",
+            reason: "must be > 0".into(),
+        });
+    }
+
+    let max_dim = limits.max_texture_dimension_2d;
+    if width > max_dim || height > max_dim {
+        return Err(VulkanRError::Capability(format!(
+            "Requested {}x{} exceeds device limit {}x{} (vkr_caps)",
+            width, height, max_dim, max_dim
+        )));
+    }
+
+    let req: u64 = (width as u64) * (height as u64) * (bytes_per_pixel as u64);
+    if req > vram_budget {
+        return Err(VulkanRError::Capability(format!(
+            "Requested {}x{} with {} B/pixel exceeds VRAM budget {} bytes (vkr_caps)",
+            width, height, bytes_per_pixel, vram_budget
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_dimension_limit() {
+        let limits = Limits {
+            max_texture_dimension_2d: 4096,
+            ..Default::default()
+        };
+        let err = validate_limits(&limits, 256 * 1024 * 1024, 8192, 8192, 4).unwrap_err();
+        match err {
+            VulkanRError::Capability(msg) => {
+                assert!(msg.contains("exceeds device limit"));
+                assert!(msg.contains("(vkr_caps)"));
+            }
+            _ => panic!("unexpected error variant"),
+        }
+    }
+
+    #[test]
+    fn rejects_vram_budget() {
+        let limits = Limits {
+            max_texture_dimension_2d: 4096,
+            ..Default::default()
+        };
+        let err = validate_limits(&limits, 1 * 1024 * 1024, 4096, 4096, 4).unwrap_err();
+        match err {
+            VulkanRError::Capability(msg) => {
+                assert!(msg.contains("VRAM budget"));
+                assert!(msg.contains("(vkr_caps)"));
+            }
+            _ => panic!("unexpected error variant"),
+        }
+    }
+
+    #[test]
+    fn accepts_valid_case() {
+        let limits = Limits {
+            max_texture_dimension_2d: 4096,
+            ..Default::default()
+        };
+        let res = validate_limits(&limits, 256 * 1024 * 1024, 1024, 1024, 4);
+        assert!(res.is_ok());
+    }
+}
